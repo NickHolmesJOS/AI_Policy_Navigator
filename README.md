@@ -1,46 +1,49 @@
 # AI Policy Navigator
 
-A modern, AI-powered application for analyzing, organizing, and understanding policies. Built with Next.js 14, TypeScript, Tailwind CSS, and OpenAI.
+A multipage Next.js application for analyzing, organizing, and understanding policies with AI-powered insights.
 
-## Features
+## Pages
 
-- **Policy Submission** — Paste text or upload `.txt`/`.md` files
-- **AI Analysis** — Automatic risk scoring, compliance check, key findings, and recommendations
-- **Q&A Chat** — Ask natural language questions about any policy
-- **Organization** — Tag policies and group them into folders
-- **Favorites** — Star important policies for quick access
-- **Search & Filter** — Find policies by content, category, or status
+| Route | Description |
+|-------|-------------|
+| `/` | Landing page with feature overview |
+| `/dashboard` | Full dashboard with sidebar, analysis, chat, and organize views |
+| `/analyze` | Dedicated policy analysis with risk scoring and compliance checks |
+| `/chat` | AI-powered Q&A chat about your policies |
+| `/organize` | Tag, categorize, and folder-organize your policies |
 
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+
-- npm or yarn
-- OpenAI API key (optional — app runs in demo mode without one)
-
-### Installation
+## Run Locally
 
 ```bash
+# Install dependencies
 npm install
-```
 
-### Environment Setup
-
-```bash
-cp .env.example .env.local
-# Edit .env.local and add your OPENAI_API_KEY
-```
-
-### Development
-
-```bash
+# Start development server
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-### Production Build
+## Environment Variables (Optional)
+
+The app works in **demo mode** without any API key. To enable real AI analysis, create a `.env.local` file:
+
+```
+OPENAI_API_KEY=your-key-here
+```
+
+## Deploy to Render
+
+1. Push this repo to GitHub
+2. Go to [Render](https://render.com) → **New** → **Web Service**
+3. Connect your GitHub repo (`NickHolmesJOS/AI_Policy_Navigator`)
+4. Render will auto-detect the `render.yaml` blueprint and configure everything
+5. Optionally add `OPENAI_API_KEY` as an environment variable in Render's dashboard
+
+**Or use the Blueprint:**
+- Click **New** → **Blueprint** → select this repo. Render reads `render.yaml` automatically.
+
+## Build for Production
 
 ```bash
 npm run build
@@ -49,13 +52,9 @@ npm start
 
 ## Tech Stack
 
-- **Framework**: Next.js 14 (App Router)
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS
-- **State**: Zustand (with localStorage persistence)
-- **AI**: OpenAI GPT-4o-mini
-- **Icons**: Lucide React
-
-## Configuration
-
-Set `OPENAI_API_KEY` in `.env.local` to enable real AI analysis. Without it, the app runs with smart mock responses for demonstration purposes.
+- **Next.js 16** (App Router)
+- **React 19**
+- **Tailwind CSS 4**
+- **Zustand** (state management)
+- **OpenAI API** (optional, for real AI analysis)
+- **Lucide React** (icons)
