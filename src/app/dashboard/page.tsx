@@ -8,6 +8,7 @@ import { PolicyAnalysisView } from "@/components/policy/PolicyAnalysisView";
 import { PolicyChat } from "@/components/policy/PolicyChat";
 import { PolicyOrganizer } from "@/components/policy/PolicyOrganizer";
 import { Button } from "@/components/ui/Button";
+import { AnalyticsOverview } from "@/components/dashboard/AnalyticsOverview";
 import {
   Plus,
   BarChart3,
@@ -17,21 +18,23 @@ import {
   PanelLeft,
   Sparkles,
   FileText,
+  LayoutGrid,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type MainView = "analysis" | "chat" | "organize";
+type MainView = "overview" | "analysis" | "chat" | "organize";
 
 const VIEW_TABS = [
+  { id: "overview" as MainView, icon: LayoutGrid, label: "Overview" },
   { id: "analysis" as MainView, icon: BarChart3, label: "Analysis" },
   { id: "chat" as MainView, icon: MessageSquare, label: "Q&A Chat" },
   { id: "organize" as MainView, icon: FolderOpen, label: "Organize" },
 ];
 
 export default function DashboardPage() {
-  const { sidebarOpen, toggleSidebar, policies } = usePolicyStore();
+  const { sidebarOpen, toggleSidebar, policies, selectPolicy } = usePolicyStore();
   const [showSubmitForm, setShowSubmitForm] = useState(false);
-  const [mainView, setMainView] = useState<MainView>("analysis");
+  const [mainView, setMainView] = useState<MainView>("overview");
 
   const analyzedCount = policies.filter((p) => p.status === "analyzed").length;
   const totalCount = policies.length;
@@ -133,6 +136,15 @@ export default function DashboardPage() {
 
         {/* content area */}
         <div className="flex-1 overflow-y-auto">
+          {mainView === "overview" && (
+            <AnalyticsOverview
+              onSelectPolicy={(id) => {
+                selectPolicy(id);
+                setMainView("analysis");
+              }}
+              onNewPolicy={() => setShowSubmitForm(true)}
+            />
+          )}
           {mainView === "analysis" && <PolicyAnalysisView />}
           {mainView === "chat" && <PolicyChat />}
           {mainView === "organize" && <PolicyOrganizer />}

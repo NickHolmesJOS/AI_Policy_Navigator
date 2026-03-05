@@ -1,7 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { usePolicyStore } from "@/store/policyStore";
+import { useState, useMemo } from "react";
+import {
+  usePolicyStore,
+  useEffectiveRulesForPolicy,
+  usePolicyComplianceStats,
+  useAllFrameworks,
+  useAllComplianceRules,
+} from "@/store/policyStore";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -18,6 +24,9 @@ import {
 import {
   AlertTriangle,
   CheckCircle,
+  CheckCircle2,
+  HelpCircle,
+  XCircle as XCircleIcon,
   Info,
   Lightbulb,
   RefreshCw,
@@ -29,10 +38,18 @@ import {
   Clock,
   FileText,
   ShieldAlert,
+  ShieldCheck,
+  ChevronDown,
+  ChevronRight,
   Target,
   TrendingUp,
+  Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { exportAnalysisReport } from "@/lib/exportReport";
+import { autoScorePolicy } from "@/lib/autoScore";
+import { useToast } from "@/components/ui/Toast";
+import { ReviewTimeline } from "@/components/policy/ReviewTimeline";
 
 function RiskGauge({ score, level }: { score: number; level: RiskLevel }) {
   const colorMap: Record<RiskLevel, string> = {
@@ -148,13 +165,46 @@ function FindingCard({ finding }: { finding: PolicyFinding }) {
 }
 
 export function PolicyAnalysisView() {
-  const { selectedPolicyId, policies, setStatus, setAnalysis, toggleFavorite } =
+  const { selectedPolicyId, policies, setStatus, setAnalysis, toggleFavorite, setComplianceResult } =
     usePolicyStore();
   const policy = policies.find((p) => p.id === selectedPolicyId);
   const [isReanalyzing, setIsReanalyzing] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "findings" | "recommendations">(
+  const [activeTab, setActiveTab] = useState<"overview" | "findings" | "recommendations" | "reviews">(
     "overview"
   );
+  const [expandedComplianceFw, setExpandedComplianceFw] = useState<Set<string>>(new Set());
+  const { toast } = useToast();
+
+  // Compliance data for the selected policy
+  const complianceStats = usePolicyComplianceStats(selectedPolicyId || "");
+  const effective = useEffectiveRulesForPolicy(selectedPolicyId || "");
+  const allFrameworks = useAllFrameworks();
+  const allRulesGlobal = useAllComplianceRules();
+
+  const frameworkScores = useMemo(() => {
+    if (!selectedPolicyId) return [];
+    return allFrameworks
+      .map((fw) => {
+        const fwRuleIds = new Set(allRulesGlobal.filter((r) => r.frameworkId === fw.id).map((r) => r.id));
+        const assigned = effective.filter((e) => fwRuleIds.has(e.rule.id));
+        if (assigned.length === 0) return null;
+        const pass = assigned.filter((e) => e.result?.status === "pass").length;
+        const fail = assigned.filter((e) => e.result?.status === "fail").length;
+        const partial = assigned.filter((e) => e.result?.status === "partial").length;
+        const unchecked = assigned.length - pass - fail - partial;
+        const score = Math.round(((pass + partial * 0.5) / assigned.length) * 100);
+        // Per-rule details for expandable view
+        const rules = assigned.map((e) => ({
+          id: e.rule.id,
+          title: e.rule.title,
+          section: e.rule.section,
+          status: (e.result?.status || "unchecked") as "pass" | "fail" | "partial" | "unchecked",
+          note: e.result?.note || null,
+        }));
+        return { fw, total: assigned.length, pass, fail, partial, unchecked, score, rules };
+      })
+      .filter(Boolean) as { fw: typeof allFrameworks[0]; total: number; pass: number; fail: number; partial: number; unchecked: number; score: number; rules: { id: string; title: string; section?: string; status: "pass" | "fail" | "partial" | "unchecked"; note: string | null }[] }[];
+  }, [selectedPolicyId, allFrameworks, allRulesGlobal, effective]);
 
   if (!policy) {
     return (
@@ -189,19 +239,38 @@ export function PolicyAnalysisView() {
       if (res.ok) {
         const analysis = await res.json();
         setAnalysis(policy.id, analysis);
+        toast({ title: "Analysis complete", description: `Risk score: ${analysis.riskScore}/100`, variant: "success" });
       } else {
         setStatus(policy.id, "error");
+        toast({ title: "Analysis failed", description: "Check your API configuration", variant: "error" });
       }
     } catch {
       setStatus(policy.id, "error");
+      toast({ title: "Connection error", description: "Could not reach the server", variant: "error" });
     }
+
+    // Auto-score all active compliance rules against this policy
+    if (effective.length > 0) {
+      const activeRules = effective.map((e) => e.rule);
+      const results = autoScorePolicy(policy.content, activeRules);
+      for (const r of results) {
+        setComplianceResult(r.ruleId, policy.id, r.status, r.note);
+      }
+    }
+
     setIsReanalyzing(false);
+  };
+
+  const handleExport = () => {
+    if (!policy?.analysis) return;
+    exportAnalysisReport(policy);
+    toast({ title: "Report exported", description: `${policy.title} report downloaded`, variant: "success" });
   };
 
   const wordCount = countWords(policy.content);
   const readingTime = estimateReadingTime(wordCount);
 
-  const tabs = ["overview", "findings", "recommendations"] as const;
+  const tabs = ["overview", "findings", "recommendations", "reviews"] as const;
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -239,6 +308,17 @@ export function PolicyAnalysisView() {
                 <StarOff className="w-5 h-5 text-zinc-400" />
               )}
             </button>
+            {policy.analysis && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleExport}
+                title="Export report"
+              >
+                <Download className="w-4 h-4" />
+                <span className="ml-1.5 hidden sm:inline">Export</span>
+              </Button>
+            )}
             {policy.status !== "analyzing" && (
               <Button
                 variant="outline"
@@ -277,10 +357,12 @@ export function PolicyAnalysisView() {
           </div>
         )}
 
-        {/* Tabs */}
-        {policy.analysis && (
-          <div className="flex gap-1 p-1 bg-white/5 rounded-lg w-fit mt-4">
-            {tabs.map((tab) => (
+        {/* Tabs — always visible */}
+        <div className="flex gap-1 p-1 bg-white/5 rounded-lg w-fit mt-4 flex-wrap">
+          {tabs.map((tab) => {
+            // hide analysis-only tabs when policy has no analysis
+            if (!policy.analysis && tab !== "reviews") return null;
+            return (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -293,14 +375,14 @@ export function PolicyAnalysisView() {
               >
                 {tab}
               </button>
-            ))}
-          </div>
-        )}
+            );
+          })}
+        </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
-        {policy.status === "analyzing" ? (
+        {activeTab !== "reviews" && policy.status === "analyzing" ? (
           <div className="flex flex-col items-center justify-center h-64 gap-4">
             <div className="w-16 h-16 rounded-2xl bg-violet-500/10 flex items-center justify-center">
               <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
@@ -313,7 +395,7 @@ export function PolicyAnalysisView() {
               </p>
             </div>
           </div>
-        ) : policy.status === "error" ? (
+        ) : activeTab !== "reviews" && policy.status === "error" ? (
           <div className="flex flex-col items-center justify-center h-64 gap-4">
             <div className="w-16 h-16 rounded-2xl bg-red-500/10 flex items-center justify-center">
               <AlertTriangle className="w-8 h-8 text-red-400" />
@@ -334,7 +416,7 @@ export function PolicyAnalysisView() {
               </Button>
             </div>
           </div>
-        ) : policy.status === "draft" ? (
+        ) : activeTab !== "reviews" && policy.status === "draft" ? (
           <div className="space-y-4">
             <div className="flex flex-col items-center justify-center h-40 gap-4">
               <div className="w-16 h-16 rounded-2xl bg-zinc-800 flex items-center justify-center">
@@ -361,7 +443,7 @@ export function PolicyAnalysisView() {
               </p>
             </div>
           </div>
-        ) : policy.analysis ? (
+        ) : activeTab !== "reviews" && policy.analysis ? (
           <div className="space-y-6">
             {activeTab === "overview" && (
               <>
@@ -425,6 +507,121 @@ export function PolicyAnalysisView() {
                     </p>
                   </CardContent>
                 </Card>
+
+                {/* ── Compliance Scorecard ──────────── */}
+                {frameworkScores.length > 0 && (
+                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+                        <ShieldCheck className="h-4 w-4 text-violet-400" />
+                        Active Compliance
+                      </h3>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-lg font-bold ${complianceStats.score >= 70 ? "text-emerald-400" : complianceStats.score >= 40 ? "text-amber-400" : "text-red-400"}`}>
+                          {complianceStats.score}%
+                        </span>
+                        <span className="text-[10px] text-zinc-500">overall</span>
+                      </div>
+                    </div>
+
+                    {/* Overall progress bar */}
+                    <div className="h-2 overflow-hidden rounded-full bg-zinc-800 mb-4">
+                      <div className="flex h-full">
+                        {complianceStats.pass > 0 && <div className="bg-emerald-500 transition-all duration-500" style={{ width: `${(complianceStats.pass / complianceStats.total) * 100}%` }} />}
+                        {complianceStats.partial > 0 && <div className="bg-amber-500 transition-all duration-500" style={{ width: `${(complianceStats.partial / complianceStats.total) * 100}%` }} />}
+                        {complianceStats.fail > 0 && <div className="bg-red-500 transition-all duration-500" style={{ width: `${(complianceStats.fail / complianceStats.total) * 100}%` }} />}
+                      </div>
+                    </div>
+
+                    {/* Per-framework rows — click to expand per-rule detail */}
+                    <div className="space-y-2.5">
+                      {frameworkScores.map(({ fw, total, pass, fail, partial, unchecked, score, rules }) => {
+                        const fwColor = fw.color.replace("bg-", "text-");
+                        const isExpanded = expandedComplianceFw.has(fw.id);
+                        const toggleFwExpand = () => {
+                          setExpandedComplianceFw((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(fw.id)) next.delete(fw.id);
+                            else next.add(fw.id);
+                            return next;
+                          });
+                        };
+                        return (
+                          <div key={fw.id} className="overflow-hidden rounded-lg border border-white/[0.04] bg-zinc-900/40">
+                            <button
+                              onClick={toggleFwExpand}
+                              className="flex w-full items-center gap-3 px-3 py-2.5 hover:bg-white/[0.02] transition-colors text-left"
+                            >
+                              <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold ${fwColor} bg-zinc-800`}>
+                                {fw.shortName}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-xs text-zinc-300 truncate">{fw.name}</span>
+                                  <span className={`text-xs font-semibold ${score >= 70 ? "text-emerald-400" : score >= 40 ? "text-amber-400" : score > 0 ? "text-red-400" : "text-zinc-500"}`}>
+                                    {score}%
+                                  </span>
+                                </div>
+                                <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
+                                  <div className="flex h-full">
+                                    {pass > 0 && <div className="bg-emerald-500" style={{ width: `${(pass / total) * 100}%` }} />}
+                                    {partial > 0 && <div className="bg-amber-500" style={{ width: `${(partial / total) * 100}%` }} />}
+                                    {fail > 0 && <div className="bg-red-500" style={{ width: `${(fail / total) * 100}%` }} />}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0 text-[10px]">
+                                <span className="flex items-center gap-0.5 text-emerald-400"><CheckCircle2 className="h-3 w-3" />{pass}</span>
+                                <span className="flex items-center gap-0.5 text-amber-400"><AlertTriangle className="h-3 w-3" />{partial}</span>
+                                <span className="flex items-center gap-0.5 text-red-400"><XCircleIcon className="h-3 w-3" />{fail}</span>
+                                {unchecked > 0 && <span className="flex items-center gap-0.5 text-zinc-600"><HelpCircle className="h-3 w-3" />{unchecked}</span>}
+                              </div>
+                              {isExpanded ? (
+                                <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
+                              ) : (
+                                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
+                              )}
+                            </button>
+
+                            {/* Per-rule breakdown */}
+                            {isExpanded && (
+                              <div className="border-t border-white/[0.03] px-3 py-2 space-y-1">
+                                {rules.map((r) => {
+                                  const statusColor = r.status === "pass" ? "text-emerald-400"
+                                    : r.status === "fail" ? "text-red-400"
+                                    : r.status === "partial" ? "text-amber-400"
+                                    : "text-zinc-600";
+                                  const StatusIcon = r.status === "pass" ? CheckCircle2
+                                    : r.status === "fail" ? XCircleIcon
+                                    : r.status === "partial" ? AlertTriangle
+                                    : HelpCircle;
+                                  return (
+                                    <div key={r.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-white/[0.02]">
+                                      <StatusIcon className={`h-3.5 w-3.5 shrink-0 ${statusColor}`} />
+                                      <span className={`text-xs flex-1 truncate ${r.status === "pass" ? "text-zinc-500 line-through" : "text-zinc-300"}`}>
+                                        {r.title}
+                                      </span>
+                                      {r.section && (
+                                        <span className="text-[9px] text-zinc-600 shrink-0">§{r.section}</span>
+                                      )}
+                                      <span className={`text-[10px] font-medium shrink-0 ${statusColor}`}>
+                                        {r.status}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <p className="mt-3 text-[10px] text-zinc-600">
+                      Toggle frameworks on/off in the Organize tab · {complianceStats.total} rules across {frameworkScores.length} frameworks
+                    </p>
+                  </div>
+                )}
               </>
             )}
 
@@ -493,6 +690,11 @@ export function PolicyAnalysisView() {
             )}
           </div>
         ) : null}
+
+        {/* Reviews tab — always rendered regardless of analysis state */}
+        {activeTab === "reviews" && (
+          <ReviewTimeline policyId={policy.id} />
+        )}
       </div>
     </div>
   );

@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Plus, FolderKanban, Tag, Folder } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Footer } from "@/components/layout/Footer";
+import { PageTransition } from "@/components/ui/Animations";
 
 export default function OrganizePage() {
   const { policies, folders, selectedPolicyId, selectPolicy } = usePolicyStore();
@@ -17,7 +18,7 @@ export default function OrganizePage() {
   const totalTags = new Set(policies.flatMap((p) => p.tags?.map((t) => t.name) || [])).size;
 
   return (
-    <>
+    <PageTransition>
       <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -137,6 +138,6 @@ export default function OrganizePage() {
       )}
 
       <Footer />
-    </>
+    </PageTransition>
   );
 }

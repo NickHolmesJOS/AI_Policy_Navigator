@@ -13,9 +13,12 @@ import {
   X,
   Loader2,
   Sparkles,
+  ChevronLeft,
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/ui/Toast";
+import { extractFileText, isSupportedFile } from "@/lib/extractFile";
 
 const CATEGORIES: PolicyCategory[] = [
   "Privacy",
@@ -41,31 +44,50 @@ export function PolicySubmitForm({ onClose, onSuccess }: PolicySubmitFormProps) 
   const [fileName, setFileName] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState<"text" | "file">("text");
+  const [isParsing, setIsParsing] = useState(false);
+  const [filePages, setFilePages] = useState<number | null>(null);
+  const [pageContents, setPageContents] = useState<string[] | null>(null);
+  const [currentPage, setCurrentPage] = useState(0);
 
   const { addPolicy, setStatus, setAnalysis, selectPolicy } = usePolicyStore();
+  const { toast } = useToast();
 
-  const handleFileRead = useCallback((file: File) => {
+  const handleFileRead = useCallback(async (file: File) => {
     setFileName(file.name);
+    setFilePages(null);
+    setPageContents(null);
+    setCurrentPage(0);
     if (!title) {
       setTitle(file.name.replace(/\.[^/.]+$/, ""));
     }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setContent((e.target?.result as string) || "");
-    };
-    reader.readAsText(file);
-  }, [title]);
+    setIsParsing(true);
+    try {
+      const { text, pages, pageContents: extracted } = await extractFileText(file);
+      setContent(text);
+      if (pages) setFilePages(pages);
+      if (extracted?.length) setPageContents(extracted);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not read file";
+      toast({ title: "Extraction failed", description: msg, variant: "error" });
+      setFileName(null);
+    } finally {
+      setIsParsing(false);
+    }
+  }, [title, toast]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setIsDragging(false);
       const file = e.dataTransfer.files[0];
-      if (file && (file.type === "text/plain" || file.name.endsWith(".txt") || file.name.endsWith(".md"))) {
+      if (!file) return;
+      if (isSupportedFile(file)) {
         handleFileRead(file);
+      } else {
+        toast({ title: "Unsupported file type", description: "Please drop a PDF, DOCX, TXT, or MD file", variant: "error" });
       }
     },
-    [handleFileRead]
+    [handleFileRead, toast]
   );
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -78,7 +100,7 @@ export function PolicySubmitForm({ onClose, onSuccess }: PolicySubmitFormProps) 
     if (!title.trim() || !content.trim()) return;
 
     setIsSubmitting(true);
-    const policy = addPolicy(title.trim(), content.trim(), category);
+    const policy = addPolicy(title.trim(), content.trim(), category, pageContents ?? undefined);
     selectPolicy(policy.id);
 
     // Run analysis immediately
@@ -94,11 +116,14 @@ export function PolicySubmitForm({ onClose, onSuccess }: PolicySubmitFormProps) 
       if (res.ok) {
         const analysis = await res.json();
         setAnalysis(policy.id, analysis);
+        toast({ title: "Policy analyzed", description: `"${title.trim()}" — Risk score: ${analysis.riskScore}/100`, variant: "success" });
       } else {
         setStatus(policy.id, "error");
+        toast({ title: "Analysis failed", description: "Policy saved but analysis encountered an error", variant: "error" });
       }
     } catch {
       setStatus(policy.id, "error");
+      toast({ title: "Connection error", description: "Policy saved but could not reach the analysis API", variant: "error" });
     }
 
     setIsSubmitting(false);
@@ -200,7 +225,95 @@ export function PolicySubmitForm({ onClose, onSuccess }: PolicySubmitFormProps) 
                 className="min-h-[200px]"
                 required
               />
+            ) : isParsing ? (
+              /* ── Parsing spinner ──────────────────────────────── */
+              <div className="border-2 border-dashed border-white/10 rounded-xl p-10 text-center">
+                <div className="flex flex-col items-center gap-3">
+                  <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
+                  <p className="text-zinc-300 font-medium">Extracting text…</p>
+                  <p className="text-zinc-500 text-xs">Reading {fileName}</p>
+                </div>
+              </div>
+            ) : fileName ? (
+              /* ── Page reader ──────────────────────────────────── */
+              <div className="border border-white/10 rounded-xl overflow-hidden">
+                {/* Reader header */}
+                <div className="flex items-center justify-between px-4 py-2.5 bg-white/5 border-b border-white/10">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileText className="w-4 h-4 text-violet-400 shrink-0" />
+                    <span className="text-sm text-white font-medium truncate">{fileName}</span>
+                    {filePages && (
+                      <span className="text-xs text-zinc-500 shrink-0">
+                        &middot; {filePages} page{filePages !== 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFileName(null);
+                      setContent("");
+                      setFilePages(null);
+                      setPageContents(null);
+                      setCurrentPage(0);
+                    }}
+                    className="text-zinc-500 hover:text-red-400 transition-colors ml-3 shrink-0"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Page content */}
+                <div className="h-60 overflow-y-auto p-5 bg-black/20">
+                  <pre className="text-xs text-zinc-200 whitespace-pre-wrap font-sans leading-relaxed">
+                    {pageContents ? (pageContents[currentPage] ?? "") : content}
+                  </pre>
+                </div>
+
+                {/* Pagination footer */}
+                {pageContents && pageContents.length > 1 && (
+                  <div className="flex items-center justify-between px-4 py-2 bg-white/5 border-t border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+                      disabled={currentPage === 0}
+                      className="flex items-center gap-1 text-xs text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" /> Prev
+                    </button>
+                    <span className="text-xs text-zinc-400 tabular-nums">
+                      Page {currentPage + 1} of {pageContents.length}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCurrentPage((p) => Math.min(pageContents.length - 1, p + 1))
+                      }
+                      disabled={currentPage === pageContents.length - 1}
+                      className="flex items-center gap-1 text-xs text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Next <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Swap file */}
+                <label
+                  htmlFor="file-input-swap"
+                  className="block text-center text-xs text-zinc-600 hover:text-zinc-400 cursor-pointer py-2 transition-colors border-t border-white/5"
+                >
+                  Upload a different file
+                  <input
+                    id="file-input-swap"
+                    type="file"
+                    accept=".txt,.md,.text,.pdf,.docx"
+                    className="hidden"
+                    onChange={handleFileInput}
+                  />
+                </label>
+              </div>
             ) : (
+              /* ── Drop zone ────────────────────────────────────── */
               <div
                 onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                 onDragLeave={() => setIsDragging(false)}
@@ -216,41 +329,18 @@ export function PolicySubmitForm({ onClose, onSuccess }: PolicySubmitFormProps) 
                 <input
                   id="file-input"
                   type="file"
-                  accept=".txt,.md,.text"
+                  accept=".txt,.md,.text,.pdf,.docx"
                   className="hidden"
                   onChange={handleFileInput}
                 />
-                {fileName ? (
-                  <div className="flex flex-col items-center gap-2">
-                    <FileText className="w-8 h-8 text-violet-400" />
-                    <p className="text-white font-medium">{fileName}</p>
-                    <p className="text-zinc-400 text-sm">
-                      {content.length.toLocaleString()} characters loaded
-                    </p>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setFileName(null);
-                        setContent("");
-                      }}
-                      className="text-xs text-red-400 hover:text-red-300"
-                    >
-                      Remove file
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-2">
-                    <Upload className="w-8 h-8 text-zinc-500" />
-                    <p className="text-zinc-400">
-                      Drop a file here or{" "}
-                      <span className="text-violet-400">browse</span>
-                    </p>
-                    <p className="text-zinc-500 text-xs">
-                      Supports .txt, .md files
-                    </p>
-                  </div>
-                )}
+                <div className="flex flex-col items-center gap-2">
+                  <Upload className="w-8 h-8 text-zinc-500" />
+                  <p className="text-zinc-400">
+                    Drop a file here or{" "}
+                    <span className="text-violet-400">browse</span>
+                  </p>
+                  <p className="text-zinc-500 text-xs">Supports PDF, DOCX, TXT, MD</p>
+                </div>
               </div>
             )}
           </div>
@@ -259,9 +349,14 @@ export function PolicySubmitForm({ onClose, onSuccess }: PolicySubmitFormProps) 
             type="submit"
             variant="gradient"
             className="w-full"
-            disabled={!isValid || isSubmitting}
+            disabled={!isValid || isSubmitting || isParsing}
           >
-            {isSubmitting ? (
+            {isParsing ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Extracting text…
+              </>
+            ) : isSubmitting ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 Analyzing Policy...

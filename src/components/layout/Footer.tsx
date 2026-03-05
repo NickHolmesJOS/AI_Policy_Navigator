@@ -30,7 +30,11 @@ export function Footer() {
                 { href: "/dashboard", label: "Dashboard" },
                 { href: "/analyze", label: "Analysis" },
                 { href: "/chat", label: "Q&A Chat" },
-                { href: "/organize", label: "Organize" },
+                { href: "/templates", label: "Templates" },
+                { href: "/compliance", label: "Compliance" },
+                { href: "/compare", label: "Compare" },
+                { href: "/activity", label: "Activity Log" },
+                { href: "/settings", label: "Settings" },
               ].map((link) => (
                 <li key={link.href}>
                   <Link

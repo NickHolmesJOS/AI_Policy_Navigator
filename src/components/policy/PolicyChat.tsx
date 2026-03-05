@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatTime } from "@/lib/utils";
+import { useToast } from "@/components/ui/Toast";
 
 const SUGGESTED_QUESTIONS = [
   "What are the main risks in this policy?",
@@ -80,6 +81,7 @@ export function PolicyChat() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -178,7 +180,10 @@ export function PolicyChat() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => clearChat(policy.id)}
+            onClick={() => {
+              clearChat(policy.id);
+              toast({ title: "Chat cleared", variant: "info" });
+            }}
             title="Clear chat"
           >
             <Trash2 className="w-4 h-4 text-zinc-400" />

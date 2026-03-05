@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { generateId } from "@/lib/utils";
 import type { PolicyTag } from "@/types";
+import { PolicyComplianceManager } from "@/components/policy/PolicyComplianceManager";
 import {
   Tag,
   Folder,
@@ -300,6 +301,15 @@ export function PolicyOrganizer() {
           )}
         </CardContent>
       </Card>
+
+      {/* Compliance Frameworks */}
+      {policy && (
+        <Card>
+          <CardContent className="pt-6">
+            <PolicyComplianceManager policyId={policy.id} />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats */}
       {policy && policy.analysis && (
