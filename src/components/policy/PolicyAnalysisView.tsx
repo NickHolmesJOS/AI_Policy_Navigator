@@ -20,6 +20,7 @@ import {
   formatTime,
   countWords,
   estimateReadingTime,
+  calcReadingLevel,
 } from "@/lib/utils";
 import {
   AlertTriangle,
@@ -44,6 +45,7 @@ import {
   Target,
   TrendingUp,
   Download,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { exportAnalysisReport } from "@/lib/exportReport";
@@ -447,6 +449,34 @@ export function PolicyAnalysisView() {
           <div className="space-y-6">
             {activeTab === "overview" && (
               <>
+                {/* Reading Level banner — always shown in overview */}
+                {(() => {
+                  const rl = calcReadingLevel(policy.content);
+                  return (
+                    <div className="flex items-center gap-4 rounded-xl border border-white/10 bg-white/2 px-5 py-3">
+                      <BookOpen className={`w-5 h-5 shrink-0 ${rl.color}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-medium text-zinc-400">Reading Level</span>
+                          <span className={`text-xs font-semibold ${rl.color}`}>{rl.label} · Grade {rl.grade}</span>
+                        </div>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+                          <div
+                            className={`h-full rounded-full transition-all duration-700 ${
+                              rl.ease >= 70 ? "bg-emerald-500" : rl.ease >= 50 ? "bg-blue-500" : rl.ease >= 30 ? "bg-amber-500" : "bg-red-500"
+                            }`}
+                            style={{ width: `${rl.ease}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className={`text-lg font-bold leading-none ${rl.color}`}>{rl.ease}</div>
+                        <div className="text-[10px] text-zinc-600 mt-0.5">ease score</div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <RiskGauge
                     score={policy.analysis.riskScore}

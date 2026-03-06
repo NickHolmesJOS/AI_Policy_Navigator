@@ -74,3 +74,56 @@ export function generateId(): string {
   // Fallback for non-secure contexts
   return "id-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
+
+function countSyllables(word: string): number {
+  word = word.toLowerCase().replace(/[^a-z]/g, "");
+  if (!word) return 0;
+  const groups = word.match(/[aeiouy]+/g);
+  let count = groups ? groups.length : 1;
+  // subtract silent trailing 'e' unless the whole word is a vowel sound
+  if (word.endsWith("e") && count > 1) count--;
+  return Math.max(1, count);
+}
+
+export interface ReadingLevel {
+  ease: number;       // Flesch Reading Ease score (0–100, higher = easier)
+  grade: number;      // Flesch-Kincaid Grade Level
+  label: string;      // Plain-language label
+  color: string;      // Tailwind text color class
+  easeLabel: string;  // Short ease descriptor
+}
+
+export function calcReadingLevel(text: string): ReadingLevel {
+  const sentenceCount = Math.max(1, (text.match(/[.!?]+/g) || []).length);
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const wordCount = Math.max(1, words.length);
+  const syllableCount = words.reduce((sum, w) => sum + countSyllables(w), 0);
+
+  // Flesch Reading Ease (0–100)
+  const rawEase =
+    206.835 -
+    1.015 * (wordCount / sentenceCount) -
+    84.6 * (syllableCount / wordCount);
+  const ease = Math.round(Math.max(0, Math.min(100, rawEase)));
+
+  // Flesch-Kincaid Grade Level
+  const grade = Math.max(
+    1,
+    Math.round(0.39 * (wordCount / sentenceCount) + 11.8 * (syllableCount / wordCount) - 15.59)
+  );
+
+  let label: string;
+  let easeLabel: string;
+  let color: string;
+  if (ease >= 70) {
+    label = "Easy Read"; easeLabel = "Easy"; color = "text-emerald-400";
+  } else if (ease >= 50) {
+    label = "Standard"; easeLabel = "Standard"; color = "text-blue-400";
+  } else if (ease >= 30) {
+    label = "Complex"; easeLabel = "Difficult"; color = "text-amber-400";
+  } else {
+    label = "Very Complex"; easeLabel = "Very Difficult"; color = "text-red-400";
+  }
+
+  return { ease, grade, label, color, easeLabel };
+}
