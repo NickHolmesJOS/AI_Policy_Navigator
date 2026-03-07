@@ -133,6 +133,32 @@ function FindingIcon({ type }: { type: PolicyFinding["type"] }) {
 }
 
 function FindingCard({ finding }: { finding: PolicyFinding }) {
+  const [aiRewrite, setAiRewrite] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const handleRewrite = async () => {
+    setLoading(true);
+    setAiRewrite(null);
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "rewrite",
+          clause: finding.description,
+          title: finding.title,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAiRewrite(data.rewrite || "No suggestion returned.");
+      } else {
+        setAiRewrite("Error: Could not get rewrite.");
+      }
+    } catch {
+      setAiRewrite("Error: Could not reach server.");
+    }
+    setLoading(false);
+  };
   return (
     <div
       className={cn(
@@ -158,8 +184,22 @@ function FindingCard({ finding }: { finding: PolicyFinding }) {
             {finding.section && (
               <span className="text-xs text-zinc-500">§ {finding.section}</span>
             )}
+            <button
+              className="ml-2 px-2 py-0.5 rounded bg-violet-600 text-xs text-white hover:bg-violet-700 transition-colors"
+              onClick={handleRewrite}
+              disabled={loading}
+            >
+              {loading ? "Rewriting..." : "Rewrite"}
+            </button>
           </div>
           <p className="text-sm text-zinc-300 mt-1">{finding.description}</p>
+          {aiRewrite && (
+            <div className="mt-3 p-3 rounded bg-zinc-800 border border-violet-500/30 text-xs text-violet-200">
+              <span className="font-semibold text-violet-400">AI Suggestion:</span>
+              <br />
+              {aiRewrite}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -171,9 +211,10 @@ export function PolicyAnalysisView() {
     usePolicyStore();
   const policy = policies.find((p) => p.id === selectedPolicyId);
   const [isReanalyzing, setIsReanalyzing] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "findings" | "recommendations" | "reviews">(
-    "overview"
-  );
+  const [activeTab, setActiveTab] = useState<"overview" | "findings" | "recommendations" | "reviews" | "search">("overview");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchPage, setSearchPage] = useState(0);
+  const [searchIndex, setSearchIndex] = useState(0);
   const [expandedComplianceFw, setExpandedComplianceFw] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
@@ -272,7 +313,7 @@ export function PolicyAnalysisView() {
   const wordCount = countWords(policy.content);
   const readingTime = estimateReadingTime(wordCount);
 
-  const tabs = ["overview", "findings", "recommendations", "reviews"] as const;
+  const tabs = ["overview", "findings", "recommendations", "search", "reviews"] as const;
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -363,7 +404,7 @@ export function PolicyAnalysisView() {
         <div className="flex gap-1 p-1 bg-white/5 rounded-lg w-fit mt-4 flex-wrap">
           {tabs.map((tab) => {
             // hide analysis-only tabs when policy has no analysis
-            if (!policy.analysis && tab !== "reviews") return null;
+            if (!policy.analysis && tab !== "reviews" && tab !== "search") return null;
             return (
               <button
                 key={tab}
@@ -375,7 +416,7 @@ export function PolicyAnalysisView() {
                     : "text-zinc-400 hover:text-white"
                 )}
               >
-                {tab}
+                {tab === "search" ? "Search" : tab}
               </button>
             );
           })}
@@ -384,7 +425,88 @@ export function PolicyAnalysisView() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
-        {activeTab !== "reviews" && policy.status === "analyzing" ? (
+        {activeTab === "search" ? (
+          <div className="space-y-6">
+            <div className="max-w-lg mx-auto mb-6">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => {
+                  setSearchQuery(e.target.value);
+                  setSearchPage(0);
+                  setSearchIndex(0);
+                }}
+                placeholder="Search policy text..."
+                className="w-full px-4 py-2 rounded-lg bg-zinc-900 text-white border border-white/10 focus:border-violet-500 outline-none text-sm"
+              />
+            </div>
+            {policy.pageContents && policy.pageContents.length > 0 ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs text-zinc-400">Page</span>
+                  <button
+                    className="px-2 py-0.5 rounded bg-zinc-800 text-white"
+                    onClick={() => setSearchPage(p => Math.max(0, p - 1))}
+                    disabled={searchPage === 0}
+                  >Prev</button>
+                  <span className="font-bold text-violet-400">{searchPage + 1}</span>
+                  <span className="text-xs text-zinc-400">of {policy.pageContents.length}</span>
+                  <button
+                    className="px-2 py-0.5 rounded bg-zinc-800 text-white"
+                    onClick={() => setSearchPage(p => Math.min(policy.pageContents.length - 1, p + 1))}
+                    disabled={searchPage === policy.pageContents.length - 1}
+                  >Next</button>
+                  {searchQuery && (
+                    <span className="ml-4 text-xs text-violet-400 font-semibold">
+                      {(() => {
+                        const pageText = policy.pageContents[searchPage];
+                        return pageText.split(new RegExp(searchQuery, "gi")).length - 1;
+                      })()} matches
+                    </span>
+                  )}
+                </div>
+                <div className="rounded-xl border border-white/10 bg-white/2 p-4 whitespace-pre-wrap text-sm text-zinc-200">
+                  {searchQuery
+                    ? (() => {
+                        const pageText = policy.pageContents[searchPage];
+                        const parts = pageText.split(new RegExp(`(${searchQuery})`, "gi"));
+                        return parts.map((part, i) => {
+                          if (searchQuery && part.toLowerCase() === searchQuery.toLowerCase()) {
+                            return (
+                              <span
+                                key={i}
+                                className="bg-violet-600 text-white rounded px-1 py-0.5"
+                              >{part}</span>
+                            );
+                          }
+                          return <span key={i}>{part}</span>;
+                        });
+                      })()
+                    : policy.pageContents[searchPage]}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-white/10 bg-white/2 p-4 whitespace-pre-wrap text-sm text-zinc-200">
+                {searchQuery
+                  ? (() => {
+                      const parts = policy.content.split(new RegExp(`(${searchQuery})`, "gi"));
+                      return parts.map((part, i) => {
+                        if (searchQuery && part.toLowerCase() === searchQuery.toLowerCase()) {
+                          return (
+                            <span
+                              key={i}
+                              className="bg-violet-600 text-white rounded px-1 py-0.5"
+                            >{part}</span>
+                          );
+                        }
+                        return <span key={i}>{part}</span>;
+                      });
+                    })()
+                  : policy.content}
+              </div>
+            )}
+          </div>
+        ) : activeTab !== "reviews" && policy.status === "analyzing" ? (
           <div className="flex flex-col items-center justify-center h-64 gap-4">
             <div className="w-16 h-16 rounded-2xl bg-violet-500/10 flex items-center justify-center">
               <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
@@ -685,9 +807,11 @@ export function PolicyAnalysisView() {
                     No findings identified.
                   </p>
                 ) : (
-                  policy.analysis.keyFindings.map((finding) => (
-                    <FindingCard key={finding.id} finding={finding} />
-                  ))
+                  <div className="space-y-4">
+                    {policy.analysis.keyFindings.map((finding) => (
+                      <FindingCard key={finding.id} finding={finding} />
+                    ))}
+                  </div>
                 )}
               </div>
             )}

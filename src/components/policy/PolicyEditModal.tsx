@@ -21,6 +21,7 @@ import {
   Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { diffLines } from "@/lib/diffUtils";
 
 const CATEGORIES: PolicyCategory[] = [
   "Privacy",
@@ -82,6 +83,8 @@ function VersionHistoryPanel({
   const previewContent = previewVersion ? previewVersion.content : policy.content;
   const previewTitle = previewVersion ? previewVersion.title : policy.title;
   const previewCategory = previewVersion ? previewVersion.category : policy.category;
+  const showDiff = !!previewVersion;
+  const diff = showDiff ? diffLines(previewVersion.content, policy.content) : [];
 
   return (
     <div className="flex min-h-[460px] gap-4">
@@ -144,7 +147,7 @@ function VersionHistoryPanel({
         )}
       </div>
 
-      {/* Right: preview */}
+      {/* Right: preview or diff */}
       <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-white/[0.08]">
         {/* Preview header */}
         <div className="flex shrink-0 items-center justify-between border-b border-white/[0.06] bg-zinc-800/50 px-4 py-3">
@@ -167,11 +170,42 @@ function VersionHistoryPanel({
             </button>
           )}
         </div>
-        {/* Preview content */}
+        {/* Diff or preview content */}
         <div className="flex-1 overflow-y-auto bg-zinc-900/30 p-5">
-          <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-zinc-300">
-            {previewContent}
-          </pre>
+          {showDiff ? (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="mb-2 text-xs text-zinc-400">Version</p>
+                <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed">
+                  {diff.map((line, i) => (
+                    <span
+                      key={i}
+                      className={cn(
+                        line.type === "removed" ? "bg-red-900 text-red-300" : line.type === "added" ? "bg-green-900 text-green-300" : "text-zinc-300"
+                      )}
+                    >{line.left || "\n"}</span>
+                  ))}
+                </pre>
+              </div>
+              <div>
+                <p className="mb-2 text-xs text-zinc-400">Current</p>
+                <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed">
+                  {diff.map((line, i) => (
+                    <span
+                      key={i}
+                      className={cn(
+                        line.type === "added" ? "bg-green-900 text-green-300" : line.type === "removed" ? "bg-red-900 text-red-300" : "text-zinc-300"
+                      )}
+                    >{line.right || "\n"}</span>
+                  ))}
+                </pre>
+              </div>
+            </div>
+          ) : (
+            <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-zinc-300">
+              {previewContent}
+            </pre>
+          )}
         </div>
       </div>
     </div>

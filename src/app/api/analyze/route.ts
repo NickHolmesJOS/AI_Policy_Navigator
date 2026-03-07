@@ -8,8 +8,31 @@ function getOpenAI() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { content, title } = await req.json();
+    const body = await req.json();
+    const { mode, clause, title, content } = body;
 
+    // AI Clause Rewriter
+    if (mode === "rewrite" && clause) {
+      if (!process.env.OPENAI_API_KEY) {
+        // Mock rewrite if no API key
+        return NextResponse.json({ rewrite: `Improved clause: ${clause.slice(0, 120)}...` });
+      }
+      const rewritePrompt = `Rewrite the following policy clause to improve clarity, precision, and compliance. Make it more actionable and professional, but keep the original intent. Respond with only the rewritten clause, no explanations.
+}
+
+      const completion = await getOpenAI().chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "You are an expert policy drafter. Always respond with only the rewritten clause." },
+          { role: "user", content: rewritePrompt },
+        ],
+        temperature: 0.2,
+      });
+      const rewrite = completion.choices[0]?.message?.content?.trim();
+      return NextResponse.json({ rewrite });
+    }
+
+    // Default: Policy Analysis
     if (!content || !title) {
       return NextResponse.json(
         { error: "Missing content or title" },
@@ -48,7 +71,8 @@ Provide your analysis as a valid JSON object with this exact structure:
   ]
 }
 
-Include 4-8 key findings and 3-5 recommendations. Be specific and actionable.`;
+Include 4-8 key findings and 3-5 recommendations. Be specific and actionable.
+`;
 
     if (!process.env.OPENAI_API_KEY) {
       // Return mock analysis when no API key is configured
@@ -119,8 +143,6 @@ Include 4-8 key findings and 3-5 recommendations. Be specific and actionable.`;
       { status: 500 }
     );
   }
-}
-
 /* ═══════════════════════════════════════════════════════
    Content-aware mock analysis (used when no API key)
    ═══════════════════════════════════════════════════════ */
