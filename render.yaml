@@ -2,10 +2,16 @@ services:
   - type: web
     name: ai-policy-navigator
     runtime: node
+    region: oregon
+    plan: free
     buildCommand: npm install && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: 3000
+      - key: HOSTNAME
+        value: 0.0.0.0
       - key: OPENAI_API_KEY
         sync: false
