@@ -450,11 +450,11 @@ export function PolicyAnalysisView() {
                     disabled={searchPage === 0}
                   >Prev</button>
                   <span className="font-bold text-violet-400">{searchPage + 1}</span>
-                  <span className="text-xs text-zinc-400">of {policy.pageContents.length}</span>
+                  <span className="text-xs text-zinc-400">of {policy.pageContents?.length ?? 0}</span>
                   <button
                     className="px-2 py-0.5 rounded bg-zinc-800 text-white"
-                    onClick={() => setSearchPage(p => Math.min(policy.pageContents.length - 1, p + 1))}
-                    disabled={searchPage === policy.pageContents.length - 1}
+                    onClick={() => setSearchPage(p => Math.min((policy.pageContents?.length ?? 1) - 1, p + 1))}
+                    disabled={searchPage === (policy.pageContents?.length ?? 1) - 1}
                   >Next</button>
                   {searchQuery && (
                     <span className="ml-4 text-xs text-violet-400 font-semibold">

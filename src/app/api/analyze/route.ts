@@ -14,13 +14,14 @@ export async function POST(req: NextRequest) {
     // AI Clause Rewriter
     if (mode === "rewrite" && clause) {
       if (!process.env.OPENAI_API_KEY) {
-        // Mock rewrite if no API key
-        return NextResponse.json({ rewrite: `Improved clause: ${clause.slice(0, 120)}...` });
+        return NextResponse.json({ rewrite: "Improved clause: " + clause.slice(0, 120) + "..." });
       }
-      const rewritePrompt = `Rewrite the following policy clause to improve clarity, precision, and compliance. Make it more actionable and professional, but keep the original intent. Respond with only the rewritten clause, no explanations.
-}
+      const rewritePrompt =
+        "Rewrite the following policy clause to improve clarity, precision, and compliance. " +
+        "Make it more actionable and professional, but keep the original intent. " +
+        "Respond with only the rewritten clause, no explanations.\n\nClause: " + clause;
 
-      const completion = await getOpenAI().chat.completions.create({
+      const rewriteCompletion = await getOpenAI().chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
           { role: "system", content: "You are an expert policy drafter. Always respond with only the rewritten clause." },
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
         ],
         temperature: 0.2,
       });
-      const rewrite = completion.choices[0]?.message?.content?.trim();
+      const rewrite = rewriteCompletion.choices[0]?.message?.content?.trim();
       return NextResponse.json({ rewrite });
     }
 
@@ -43,39 +44,40 @@ export async function POST(req: NextRequest) {
     const wordCount = countWords(content);
     const readingTime = estimateReadingTime(wordCount);
 
-    const prompt = `You are an expert policy analyst. Analyze the following policy document and provide a structured analysis in JSON format.
-
-Policy Title: ${title}
-
-Policy Content:
-${content.slice(0, 8000)}
-
-Provide your analysis as a valid JSON object with this exact structure:
-{
-  "summary": "A comprehensive 2-3 sentence summary of the policy",
-  "riskScore": <number from 0-100 where 0=no risk, 100=critical risk>,
-  "complianceStatus": "A brief statement about compliance implications",
-  "keyFindings": [
-    {
-      "id": "unique-id-1",
-      "type": "risk|requirement|recommendation|compliance",
-      "severity": "low|medium|high|critical",
-      "title": "Finding title",
-      "description": "Detailed description",
-      "section": "Optional: section reference"
-    }
-  ],
-  "recommendations": [
-    "Actionable recommendation 1",
-    "Actionable recommendation 2"
-  ]
-}
-
-Include 4-8 key findings and 3-5 recommendations. Be specific and actionable.
-`;
+    const promptLines = [
+      "You are an expert policy analyst. Analyze the following policy document and provide a structured analysis in JSON format.",
+      "",
+      "Policy Title: " + title,
+      "",
+      "Policy Content:",
+      content.slice(0, 8000),
+      "",
+      "Provide your analysis as a valid JSON object with this exact structure:",
+      "{",
+      '  "summary": "A comprehensive 2-3 sentence summary of the policy",',
+      '  "riskScore": <number from 0-100 where 0=no risk, 100=critical risk>,',
+      '  "complianceStatus": "A brief statement about compliance implications",',
+      '  "keyFindings": [',
+      "    {",
+      '      "id": "unique-id-1",',
+      '      "type": "risk|requirement|recommendation|compliance",',
+      '      "severity": "low|medium|high|critical",',
+      '      "title": "Finding title",',
+      '      "description": "Detailed description",',
+      '      "section": "Optional: section reference"',
+      "    }",
+      "  ],",
+      '  "recommendations": [',
+      '    "Actionable recommendation 1",',
+      '    "Actionable recommendation 2"',
+      "  ]",
+      "}",
+      "",
+      "Include 4-8 key findings and 3-5 recommendations. Be specific and actionable.",
+    ];
+    const prompt = promptLines.join("\n");
 
     if (!process.env.OPENAI_API_KEY) {
-      // Return mock analysis when no API key is configured
       const mockAnalysis = generateMockAnalysis(title, content, wordCount, readingTime);
       return NextResponse.json(mockAnalysis);
     }
@@ -85,8 +87,7 @@ Include 4-8 key findings and 3-5 recommendations. Be specific and actionable.
       messages: [
         {
           role: "system",
-          content:
-            "You are an expert policy analyst. Always respond with valid JSON only, no markdown.",
+          content: "You are an expert policy analyst. Always respond with valid JSON only, no markdown.",
         },
         {
           role: "user",
@@ -103,7 +104,6 @@ Include 4-8 key findings and 3-5 recommendations. Be specific and actionable.
     }
 
     const analysisData = JSON.parse(responseText);
-
     const riskScore = Math.max(0, Math.min(100, analysisData.riskScore || 50));
     const riskLevel = getRiskLabel(riskScore);
 
@@ -143,6 +143,8 @@ Include 4-8 key findings and 3-5 recommendations. Be specific and actionable.
       { status: 500 }
     );
   }
+}
+
 /* ═══════════════════════════════════════════════════════
    Content-aware mock analysis (used when no API key)
    ═══════════════════════════════════════════════════════ */
